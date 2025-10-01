@@ -8,7 +8,7 @@
 
 1. Cài đặt thư viện:
 - git clone https://github.com/minhhlki/tiktok-counter
-truy cập vào thư mục file đã tải về: cd ( địa chỉ thư mục file )
+truy cập vào thư mục file đã tải về: cd ( địa chỉ thư mục file ) VD: cd tiktok-counter
 1. sudo apt-get update
 2. sudo apt-get install -y libnspr4 libnss3 libgbm1
 3. pip install -r requirements.txt
@@ -114,5 +114,6 @@ truy cập vào thư mục file đã tải về: cd ( địa chỉ thư mục fi
 ═══════════════════════════════════════════════════════════════════
            CHÚC BẠN SỬ DỤNG TOOL HIỆU QUẢ! 🎉
 ═══════════════════════════════════════════════════════════════════
+
 
 
