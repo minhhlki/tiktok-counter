@@ -367,7 +367,7 @@ class TikTokStatsAnalyzer:
         print(f"  ❤️ Channel Likes: {self.format_number(channel_info.get('channel_likes', 0))} ({channel_info.get('channel_likes', 0):,})")
         
         # Thống kê video
-        print(f"\n📈 THỐNG KÊ VIDEO:")
+        print(f"\n📈 THỐNG KÊ VIDEO ĐÃ CHECK ĐƯỢC:")
         print(f"  📹 Tổng số video: {stats.get('total_videos', 0)}")
         print(f"  👁️ TỔNG LƯỢT XEM: {stats.get('total_views_formatted', '0')} ({stats.get('total_views', 0):,} views)")
         
@@ -522,4 +522,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n⚠️ Đã dừng chương trình bởi người dùng.")
     except Exception as e:
+
         print(f"\n\n❌ Lỗi: {str(e)}")
