@@ -4,8 +4,16 @@
 
 📦 BƯỚC 1: CÀI ĐẶT
 -------------------------------------------------------------------
+
+
 1. Cài đặt thư viện:
-   pip install -r requirements.txt
+- git clone https://github.com/minhhlki/tiktok-counter
+truy cập vào thư mục file đã tải về: cd ( địa chỉ thư mục file )
+1. sudo apt-get update
+2. sudo apt-get install -y libnspr4 libnss3 libgbm1
+3. pip install -r requirements.txt
+
+
 
 2. Cài đặt browser cho Playwright:
    playwright install chromium
@@ -106,4 +114,5 @@
 ═══════════════════════════════════════════════════════════════════
            CHÚC BẠN SỬ DỤNG TOOL HIỆU QUẢ! 🎉
 ═══════════════════════════════════════════════════════════════════
+
 
