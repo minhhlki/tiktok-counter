@@ -1,70 +1,138 @@
 #!/usr/bin/env python3
 """
-TikTok Channel Statistics Analyzer
-Phân tích toàn diện thông số kênh TikTok: views, likes, followers, engagement rate
+TikTok Channel Total Views Counter - IMPROVED VERSION
+Cải thiện độ chính xác khi parse view count
 """
 
 import asyncio
 import json
 import re
-import csv
-from typing import Dict, List, Optional, Tuple
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
+from typing import Dict, List, Optional
+from playwright.async_api import async_playwright
 import argparse
 from datetime import datetime
-from pathlib import Path
 
-class TikTokStatsAnalyzer:
-    def __init__(self, headless: bool = True, max_scrolls: int = 20):
+class TikTokViewCounter:
+    def __init__(self, headless: bool = True):
         self.headless = headless
-        self.max_scrolls = max_scrolls
         self.total_views = 0
-        self.total_likes = 0
-        self.total_comments = 0
-        self.total_shares = 0
         self.videos_data = []
-        self.channel_info = {}
         
-    def parse_count(self, count_str: str) -> int:
+    def parse_view_count(self, view_str: str) -> int:
         """
-        Chuyển đổi string count thành số
-        Ví dụ: "1.2M" -> 1200000, "523K" -> 523000, "1.5B" -> 1500000000
+        Chuyển đổi string view count thành số - IMPROVED VERSION
+        Cải thiện: Làm tròn đúng cách để giảm sai số
+        
+        Ví dụ: "1.2M" -> 1200000, "523K" -> 523000
         """
-        if not count_str:
+        if not view_str:
             return 0
             
-        count_str = count_str.strip().upper()
+        view_str = view_str.strip().upper()
         
         # Xử lý các trường hợp đặc biệt
         multipliers = {
             'K': 1000,
             'M': 1000000,
-            'B': 1000000000,
-            'T': 1000000000000
+            'B': 1000000000
         }
         
         # Tìm và xử lý số với ký tự viết tắt
         for suffix, multiplier in multipliers.items():
-            if suffix in count_str:
+            if suffix in view_str:
                 try:
                     # Lấy phần số trước ký tự
-                    num_str = count_str.replace(suffix, '').strip()
+                    num_str = view_str.replace(suffix, '').strip()
                     # Chuyển đổi và nhân với hệ số
-                    return int(float(num_str) * multiplier)
+                    # IMPROVEMENT: Sử dụng round() thay vì int() để làm tròn đúng
+                    return round(float(num_str) * multiplier)
                 except:
                     continue
         
         # Nếu không có ký tự viết tắt, cố gắng parse số trực tiếp
         try:
             # Loại bỏ các ký tự không phải số (như dấu phẩy)
-            clean_str = re.sub(r'[^\d]', '', count_str)
+            clean_str = re.sub(r'[^\d]', '', view_str)
             return int(clean_str) if clean_str else 0
         except:
             return 0
     
-    def parse_view_count(self, view_str: str) -> int:
-        """Backward compatibility"""
-        return self.parse_count(view_str)
+    async def get_exact_view_count(self, video_elem) -> tuple:
+        """
+        Lấy view count chính xác nhất có thể từ nhiều nguồn
+        Returns: (view_count, view_text, source)
+        """
+        view_count = 0
+        view_text = "0"
+        source = "unknown"
+        
+        # Chiến lược 1: Tìm trong data attributes (chính xác nhất)
+        try:
+            # Thử lấy từ aria-label hoặc title (có thể chứa số đầy đủ)
+            aria_label = await video_elem.get_attribute('aria-label')
+            if aria_label and 'view' in aria_label.lower():
+                # Extract số từ aria-label: "5234 views" -> 5234
+                numbers = re.findall(r'(\d[\d,]*)\s*view', aria_label, re.IGNORECASE)
+                if numbers:
+                    clean_num = numbers[0].replace(',', '')
+                    view_count = int(clean_num)
+                    view_text = numbers[0]
+                    source = "aria-label"
+                    return (view_count, view_text, source)
+        except:
+            pass
+        
+        # Chiến lược 2: Tìm strong element với data attributes
+        try:
+            view_elem = video_elem.locator('strong[data-e2e="video-views"]').first
+            if await view_elem.count() > 0:
+                # Thử lấy title attribute
+                title = await view_elem.get_attribute('title')
+                if title:
+                    clean_num = re.sub(r'[^\d]', '', title)
+                    if clean_num:
+                        view_count = int(clean_num)
+                        view_text = title
+                        source = "title-attribute"
+                        return (view_count, view_text, source)
+        except:
+            pass
+        
+        # Chiến lược 3: Parse từ text (ít chính xác nhất - có làm tròn)
+        view_selectors = [
+            'strong[data-e2e="video-views"]',
+            'strong',
+            '[data-e2e="video-views"]',
+            '.video-count',
+            'span[title*="views"]'
+        ]
+        
+        for view_selector in view_selectors:
+            try:
+                view_elem = video_elem.locator(view_selector)
+                if await view_elem.count() > 0:
+                    # Thử lấy title trước
+                    elem = view_elem.first
+                    title = await elem.get_attribute('title')
+                    if title and title.strip():
+                        clean_num = re.sub(r'[^\d]', '', title)
+                        if clean_num:
+                            view_count = int(clean_num)
+                            view_text = title
+                            source = f"title-{view_selector}"
+                            return (view_count, view_text, source)
+                    
+                    # Nếu không có title, lấy text
+                    text = await elem.text_content()
+                    if text and text.strip():
+                        view_text = text.strip()
+                        view_count = self.parse_view_count(view_text)
+                        source = f"text-{view_selector}"
+                        return (view_count, view_text, source)
+            except:
+                continue
+        
+        return (view_count, view_text, source)
     
     async def scrape_channel(self, channel_url: str) -> Dict:
         """
@@ -104,29 +172,27 @@ class TikTokStatsAnalyzer:
                 
                 previous_height = 0
                 scroll_attempts = 0
+                max_scrolls = 15
                 
-                while scroll_attempts < self.max_scrolls:
+                while scroll_attempts < max_scrolls:
                     # Scroll xuống cuối trang
                     await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                    await page.wait_for_timeout(3000)  # Đợi content load
+                    await page.wait_for_timeout(3000)
                     
                     # Kiểm tra chiều cao mới
                     current_height = await page.evaluate('document.body.scrollHeight')
                     
                     if current_height == previous_height:
                         scroll_attempts += 1
-                        if scroll_attempts >= 3:  # Sau 3 lần không có content mới thì dừng
+                        if scroll_attempts >= 3:
                             break
                     else:
                         scroll_attempts = 0
                         previous_height = current_height
                     
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Scroll {scroll_attempts + 1}/{self.max_scrolls}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Scroll {scroll_attempts + 1}/{max_scrolls}")
                 
-                # Lấy thông tin channel chi tiết
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Đang lấy thông tin kênh...")
-                
-                # Tên kênh
+                # Lấy thông tin channel
                 try:
                     channel_name = await page.locator('h1[data-e2e="user-title"]').text_content()
                 except Exception:
@@ -135,46 +201,7 @@ class TikTokStatsAnalyzer:
                     except Exception:
                         channel_name = "Unknown"
                 
-                # Username/handle
-                try:
-                    username = await page.locator('h2[data-e2e="user-subtitle"]').text_content()
-                except Exception:
-                    username = ""
-                
-                # Bio/Description
-                try:
-                    bio = await page.locator('h2[data-e2e="user-bio"]').text_content()
-                except Exception:
-                    bio = ""
-                
-                # Followers, Following, Likes
-                channel_stats = {'followers': 0, 'following': 0, 'channel_likes': 0}
-                try:
-                    stats_elements = await page.locator('[data-e2e="following-count"], [data-e2e="followers-count"], [data-e2e="likes-count"]').all()
-                    for elem in stats_elements:
-                        try:
-                            stat_text = await elem.text_content()
-                            stat_type = await elem.get_attribute('data-e2e')
-                            
-                            if stat_type == 'followers-count':
-                                channel_stats['followers'] = self.parse_count(stat_text)
-                            elif stat_type == 'following-count':
-                                channel_stats['following'] = self.parse_count(stat_text)
-                            elif stat_type == 'likes-count':
-                                channel_stats['channel_likes'] = self.parse_count(stat_text)
-                        except:
-                            continue
-                except Exception as e:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Không lấy được stats kênh: {str(e)}")
-                
-                self.channel_info = {
-                    'name': channel_name,
-                    'username': username,
-                    'bio': bio,
-                    **channel_stats
-                }
-                
-                # Tìm tất cả video items - thử nhiều selector
+                # Tìm tất cả video items
                 video_selectors = [
                     '[data-e2e="user-post-item"]',
                     '[data-e2e="user-post-item-list"] > div',
@@ -201,38 +228,10 @@ class TikTokStatsAnalyzer:
                 # Extract thông tin từ mỗi video
                 for i, video_elem in enumerate(video_elements, 1):
                     try:
-                        # Tìm view count - thử nhiều selector khác nhau
-                        view_selectors = [
-                            'strong[data-e2e="video-views"]',
-                            'strong',
-                            '[data-e2e="video-views"]',
-                            '.video-count',
-                            'span[title*="views"]'
-                        ]
+                        # IMPROVED: Sử dụng hàm get_exact_view_count mới
+                        views, view_text, source = await self.get_exact_view_count(video_elem)
                         
-                        view_text = "0"
-                        for view_selector in view_selectors:
-                            try:
-                                view_elem = video_elem.locator(view_selector)
-                                if await view_elem.count() > 0:
-                                    view_text = await view_elem.first.text_content()
-                                    if view_text and view_text.strip():
-                                        break
-                            except:
-                                continue
-                        
-                        # Parse view count
-                        views = self.parse_count(view_text)
-                        
-                        # Lấy likes, comments, shares (nếu có)
-                        likes = 0
-                        comments = 0
-                        shares = 0
-                        
-                        # Note: TikTok thường không hiển thị likes/comments/shares ở channel page
-                        # Chỉ hiển thị views. Để lấy full stats cần vào từng video riêng
-                        
-                        # Lấy link video nếu có
+                        # Lấy link video
                         try:
                             link_elem = video_elem.locator('a').first
                             video_link = await link_elem.get_attribute('href') if await video_elem.locator('a').count() > 0 else ""
@@ -241,7 +240,7 @@ class TikTokStatsAnalyzer:
                         except:
                             video_link = ""
                         
-                        # Lấy caption/description nếu có
+                        # Lấy caption/description
                         try:
                             caption_selectors = [
                                 '[data-e2e="user-post-item-desc"]',
@@ -264,53 +263,31 @@ class TikTokStatsAnalyzer:
                         video_info = {
                             'index': i,
                             'views': views,
-                            'view_text': view_text.strip() if view_text else "0",
-                            'likes': likes,
-                            'comments': comments,
-                            'shares': shares,
+                            'view_text': view_text,
+                            'source': source,  # IMPROVED: Ghi lại nguồn data
                             'link': video_link,
-                            'caption': caption[:100] if caption else ""  # Giới hạn 100 ký tự
+                            'caption': caption[:100] if caption else ""
                         }
                         
                         self.videos_data.append(video_info)
                         self.total_views += views
-                        self.total_likes += likes
-                        self.total_comments += comments
-                        self.total_shares += shares
                         
-                        # In progress
-                        if i % 10 == 0 or views > 0:  # Hiển thị khi có views hoặc mỗi 10 video
-                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Video {i}: {view_text} views")
+                        # In progress với thông tin nguồn
+                        if i % 10 == 0 or views > 0:
+                            print(f"[{datetime.now().strftime('%H:%M:%S')}] Video {i}: {view_text} views (source: {source})")
                         
                     except Exception as e:
                         print(f"[{datetime.now().strftime('%H:%M:%S')}] Lỗi khi xử lý video {i}: {str(e)}")
                         continue
                 
-                # Tính toán engagement rate (nếu có đủ data)
-                engagement_rate = 0
-                if self.channel_info.get('followers', 0) > 0 and self.total_views > 0:
-                    # Engagement rate = (Total interactions / (Followers * Videos)) * 100
-                    total_interactions = self.total_likes + self.total_comments + self.total_shares
-                    if total_interactions > 0:
-                        engagement_rate = (total_interactions / (self.channel_info['followers'] * len(self.videos_data))) * 100
-                
-                # Tạo kết quả chi tiết
+                # Tạo kết quả
                 result = {
                     'channel_url': channel_url,
-                    'channel_info': self.channel_info,
-                    'statistics': {
-                        'total_videos': len(self.videos_data),
-                        'total_views': self.total_views,
-                        'total_views_formatted': self.format_number(self.total_views),
-                        'total_likes': self.total_likes,
-                        'total_likes_formatted': self.format_number(self.total_likes),
-                        'total_comments': self.total_comments,
-                        'total_comments_formatted': self.format_number(self.total_comments),
-                        'total_shares': self.total_shares,
-                        'total_shares_formatted': self.format_number(self.total_shares),
-                        'average_views': self.total_views // len(self.videos_data) if self.videos_data else 0,
-                        'engagement_rate': round(engagement_rate, 2)
-                    },
+                    'channel_name': channel_name,
+                    'total_videos': len(self.videos_data),
+                    'total_views': self.total_views,
+                    'total_views_formatted': self.format_number(self.total_views),
+                    'average_views': self.total_views // len(self.videos_data) if self.videos_data else 0,
                     'videos': self.videos_data,
                     'scraped_at': datetime.now().isoformat()
                 }
@@ -343,184 +320,104 @@ class TikTokStatsAnalyzer:
     
     def print_report(self, data: Dict):
         """
-        In báo cáo kết quả chi tiết
+        In báo cáo kết quả
         """
-        print("\n" + "="*70)
-        print("📊 BÁO CÁO PHÂN TÍCH KÊNH TIKTOK")
-        print("="*70)
+        print("\n" + "="*60)
+        print("📊 BÁO CÁO TỔNG VIEW KÊNH TIKTOK - IMPROVED")
+        print("="*60)
         
         if 'error' in data:
             print(f"❌ Lỗi: {data['error']}")
             return
         
-        channel_info = data.get('channel_info', {})
-        stats = data.get('statistics', {})
+        print(f"📱 Kênh: {data['channel_name']}")
+        print(f"🔗 URL: {data['channel_url']}")
+        print(f"📹 Tổng số video: {data['total_videos']}")
+        print(f"👁️ TỔNG LƯỢT XEM: {data['total_views_formatted']} ({data['total_views']:,} views)")
         
-        # Thông tin kênh
-        print(f"\n🎯 THÔNG TIN KÊNH:")
-        print(f"  📱 Tên: {channel_info.get('name', 'N/A')}")
-        print(f"  👤 Username: {channel_info.get('username', 'N/A')}")
-        if channel_info.get('bio'):
-            print(f"  📝 Bio: {channel_info['bio'][:100]}")
-        print(f"  👥 Followers: {self.format_number(channel_info.get('followers', 0))} ({channel_info.get('followers', 0):,})")
-        print(f"  ➕ Following: {self.format_number(channel_info.get('following', 0))} ({channel_info.get('following', 0):,})")
-        print(f"  ❤️ Channel Likes: {self.format_number(channel_info.get('channel_likes', 0))} ({channel_info.get('channel_likes', 0):,})")
+        if data['total_videos'] > 0:
+            print(f"📈 Trung bình/video: {self.format_number(data['average_views'])}")
         
-        # Thống kê video
-        print(f"\n📈 THỐNG KÊ VIDEO ĐÃ CHECK ĐƯỢC:")
-        print(f"  📹 Tổng số video: {stats.get('total_videos', 0)}")
-        print(f"  👁️ TỔNG LƯỢT XEM: {stats.get('total_views_formatted', '0')} ({stats.get('total_views', 0):,} views)")
-        
-        if stats.get('total_likes', 0) > 0:
-            print(f"  ❤️ Tổng Likes: {stats.get('total_likes_formatted', '0')} ({stats.get('total_likes', 0):,})")
-        if stats.get('total_comments', 0) > 0:
-            print(f"  💬 Tổng Comments: {stats.get('total_comments_formatted', '0')} ({stats.get('total_comments', 0):,})")
-        if stats.get('total_shares', 0) > 0:
-            print(f"  🔄 Tổng Shares: {stats.get('total_shares_formatted', '0')} ({stats.get('total_shares', 0):,})")
-        
-        if stats.get('total_videos', 0) > 0:
-            print(f"  📊 Trung bình views/video: {self.format_number(stats.get('average_views', 0))}")
-        
-        if stats.get('engagement_rate', 0) > 0:
-            print(f"  🔥 Engagement Rate: {stats['engagement_rate']}%")
-        
-        print(f"\n🔗 URL: {data['channel_url']}")
         print(f"🕐 Thời gian scrape: {data['scraped_at']}")
         
-        if data.get('videos'):
+        # Thống kê nguồn dữ liệu
+        if data['videos']:
+            sources = {}
+            for video in data['videos']:
+                src = video.get('source', 'unknown')
+                sources[src] = sources.get(src, 0) + 1
+            
+            print(f"\n📊 NGUỒN DỮ LIỆU:")
+            for src, count in sources.items():
+                print(f"  - {src}: {count} videos")
+            
             # Lọc video có views > 0
             videos_with_views = [v for v in data['videos'] if v['views'] > 0]
-            print(f"\n📌 TOP 10 VIDEO HOT NHẤT: (từ {len(videos_with_views)} video có data)")
-            print("-"*70)
+            print(f"\n📌 VIDEO CÓ VIEW DATA: {len(videos_with_views)}/{len(data['videos'])}")
+            print("-"*60)
             
             if videos_with_views:
                 # Sắp xếp theo views
                 sorted_videos = sorted(videos_with_views, key=lambda x: x['views'], reverse=True)
                 for i, video in enumerate(sorted_videos[:10], 1):
-                    print(f"\n{i}. 👁️ {self.format_number(video['views'])} views ({video['view_text']})")
-                    if video.get('likes', 0) > 0:
-                        print(f"   ❤️ {self.format_number(video['likes'])} likes")
+                    print(f"{i}. {self.format_number(video['views'])} views ({video['view_text']}) [src: {video['source']}]")
                     if video['caption']:
-                        print(f"   📝 {video['caption'][:70]}...")
+                        print(f"   Caption: {video['caption'][:70]}...")
                     if video['link']:
-                        print(f"   🔗 {video['link']}")
+                        print(f"   Link: {video['link']}")
+                    print()
         
-        print("\n" + "="*70)
+        print("="*60)
     
-    async def save_to_json(self, data: Dict, filename: str = None):
+    async def save_to_file(self, data: Dict, filename: str = None):
         """
         Lưu kết quả vào file JSON
         """
         if not filename:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            channel_name = data.get('channel_info', {}).get('name', 'unknown').replace('@', '').replace('/', '_').replace(' ', '_')
-            filename = f"tiktok_stats_{channel_name}_{timestamp}.json"
+            channel_name = data.get('channel_name', 'unknown').replace('@', '').replace('/', '_')
+            filename = f"tiktok_views_{channel_name}_{timestamp}.json"
         
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        print(f"\n💾 Đã lưu JSON vào: {filename}")
-        return filename
-    
-    async def save_to_csv(self, data: Dict, filename: str = None):
-        """
-        Lưu danh sách video vào file CSV
-        """
-        if 'error' in data or not data.get('videos'):
-            print("⚠️ Không có dữ liệu video để xuất CSV")
-            return None
-        
-        if not filename:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            channel_name = data.get('channel_info', {}).get('name', 'unknown').replace('@', '').replace('/', '_').replace(' ', '_')
-            filename = f"tiktok_videos_{channel_name}_{timestamp}.csv"
-        
-        # Chuẩn bị headers
-        headers = ['Index', 'Views', 'Likes', 'Comments', 'Shares', 'Caption', 'Link']
-        
-        with open(filename, 'w', encoding='utf-8-sig', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=headers)
-            writer.writeheader()
-            
-            for video in data['videos']:
-                writer.writerow({
-                    'Index': video.get('index', ''),
-                    'Views': video.get('views', 0),
-                    'Likes': video.get('likes', 0),
-                    'Comments': video.get('comments', 0),
-                    'Shares': video.get('shares', 0),
-                    'Caption': video.get('caption', ''),
-                    'Link': video.get('link', '')
-                })
-        
-        print(f"📊 Đã lưu CSV vào: {filename}")
-        return filename
+        print(f"\n💾 Đã lưu kết quả vào: {filename}")
 
 async def main():
-    parser = argparse.ArgumentParser(
-        description='TikTok Channel Statistics Analyzer - Phân tích toàn diện kênh TikTok',
-        epilog='Ví dụ: python tiktok_counter.py https://www.tiktok.com/@username --save-json --save-csv'
-    )
-    parser.add_argument('url', nargs='?', 
-                       help='TikTok channel URL (ví dụ: https://www.tiktok.com/@username)')
+    parser = argparse.ArgumentParser(description='TikTok Channel Views Counter - IMPROVED')
+    parser.add_argument('url', nargs='?', default='https://www.tiktok.com/@huongzang007',
+                       help='TikTok channel URL')
     parser.add_argument('--headless', action='store_false', default=True,
-                       help='Hiển thị browser (không chạy ẩn)')
-    parser.add_argument('--save-json', action='store_true',
-                       help='Lưu kết quả vào file JSON')
-    parser.add_argument('--save-csv', action='store_true',
-                       help='Lưu danh sách video vào file CSV')
-    parser.add_argument('--max-scrolls', type=int, default=20,
-                       help='Số lần scroll tối đa để load video (default: 20)')
+                       help='Run browser in non-headless mode (show browser window)')
+    parser.add_argument('--save', action='store_true',
+                       help='Save results to JSON file')
     
     args = parser.parse_args()
     
-    # Nếu không có URL, yêu cầu nhập
-    if not args.url:
-        print("\n🔗 Nhập URL kênh TikTok (ví dụ: https://www.tiktok.com/@username):")
-        args.url = input("URL: ").strip()
-        
-        if not args.url:
-            print("❌ URL không được để trống!")
-            return
-    
-    # Validate URL
-    if 'tiktok.com' not in args.url:
-        print("⚠️ URL không hợp lệ. Vui lòng nhập URL TikTok đúng định dạng!")
-        return
-    
-    print(f"\n🚀 Bắt đầu phân tích kênh: {args.url}")
+    print(f"🚀 Bắt đầu scrape kênh: {args.url}")
     print(f"🖥️ Chế độ headless: {args.headless}")
-    print(f"📜 Max scrolls: {args.max_scrolls}")
     
-    # Khởi tạo analyzer
-    analyzer = TikTokStatsAnalyzer(headless=args.headless, max_scrolls=args.max_scrolls)
+    # Khởi tạo counter
+    counter = TikTokViewCounter(headless=args.headless)
     
     # Scrape channel
-    result = await analyzer.scrape_channel(args.url)
+    result = await counter.scrape_channel(args.url)
     
     # In báo cáo
-    analyzer.print_report(result)
+    counter.print_report(result)
     
     # Lưu file nếu cần
-    if args.save_json:
-        await analyzer.save_to_json(result)
-    
-    if args.save_csv:
-        await analyzer.save_to_csv(result)
+    if args.save:
+        await counter.save_to_file(result)
 
 if __name__ == "__main__":
     print("""
-╔════════════════════════════════════════════════╗
-║   TIKTOK CHANNEL STATISTICS ANALYZER           ║
-║   Phân tích toàn diện kênh TikTok              ║
-║   Version: 2.0.0 - Enhanced Edition            ║
-╚════════════════════════════════════════════════╝
+╔══════════════════════════════════════════╗
+║  TIKTOK CHANNEL VIEWS COUNTER IMPROVED   ║
+║         Phiên bản: 1.0.2                 ║
+║      CẢI THIỆN ĐỘ CHÍNH XÁC VIEW         ║
+╚══════════════════════════════════════════╝
     """)
     
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n\n⚠️ Đã dừng chương trình bởi người dùng.")
-    except Exception as e:
+    asyncio.run(main())
 
-        print(f"\n\n❌ Lỗi: {str(e)}")
