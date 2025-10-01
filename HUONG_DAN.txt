@@ -1,0 +1,109 @@
+═══════════════════════════════════════════════════════════════════
+  HƯỚNG DẪN NHANH - TIKTOK CHANNEL STATISTICS ANALYZER
+═══════════════════════════════════════════════════════════════════
+
+📦 BƯỚC 1: CÀI ĐẶT
+-------------------------------------------------------------------
+1. Cài đặt thư viện:
+   pip install -r requirements.txt
+
+2. Cài đặt browser cho Playwright:
+   playwright install chromium
+
+✅ Xong! Giờ có thể dùng tool.
+
+
+🚀 BƯỚC 2: SỬ DỤNG
+-------------------------------------------------------------------
+
+🔸 CÁCH 1: Đơn giản nhất
+   python tiktok_counter.py
+   
+   → Chương trình sẽ hỏi URL, bạn chỉ cần paste link kênh TikTok vào.
+
+🔸 CÁCH 2: Truyền URL luôn
+   python tiktok_counter.py https://www.tiktok.com/@username
+
+🔸 CÁCH 3: Lưu kết quả ra file
+   python tiktok_counter.py https://www.tiktok.com/@username --save-json --save-csv
+   
+   → Sẽ tạo 2 file:
+      - tiktok_stats_[tên]_[time].json (dữ liệu đầy đủ)
+      - tiktok_videos_[tên]_[time].csv (mở được bằng Excel)
+
+🔸 CÁCH 4: Load nhiều video hơn
+   python tiktok_counter.py https://www.tiktok.com/@username --max-scrolls 50
+   
+   → Scroll 50 lần thay vì 20 (mặc định)
+   → Càng nhiều scroll = càng nhiều video = càng lâu
+
+
+📊 BẠN SẼ NHẬN ĐƯỢC
+-------------------------------------------------------------------
+✅ Tên kênh, username, bio
+✅ Số followers, following, tổng likes
+✅ Tổng lượt xem tất cả video
+✅ Số lượng video
+✅ Trung bình views/video
+✅ Top 10 video hot nhất
+✅ Engagement rate (nếu có đủ data)
+
+
+⚡ VÍ DỤ KẾT QUẢ
+-------------------------------------------------------------------
+🎯 THÔNG TIN KÊNH:
+  📱 Tên: Kênh của tôi
+  👤 Username: @myusername
+  👥 Followers: 1.50M (1,500,000)
+  ❤️ Channel Likes: 45.20M (45,200,000)
+
+📈 THỐNG KÊ VIDEO:
+  📹 Tổng số video: 150
+  👁️ TỔNG LƯỢT XEM: 125.50M (125,500,000 views)
+  📊 Trung bình views/video: 836.67K
+
+📌 TOP 10 VIDEO HOT NHẤT:
+1. 👁️ 5.20M views
+   📝 Video về...
+   🔗 https://tiktok.com/...
+
+
+💡 MẸO VẶT
+-------------------------------------------------------------------
+• Nếu muốn xem browser chạy:
+  python tiktok_counter.py URL --headless
+
+• Nếu muốn load TẤT CẢ video (rất lâu):
+  python tiktok_counter.py URL --max-scrolls 100
+
+• Nếu bị lỗi "không tìm thấy video":
+  - Chạy lại với --headless để xem
+  - Kiểm tra URL có đúng không
+  - Thử VPN nếu bị block
+
+• File CSV có thể mở bằng Excel để phân tích dễ hơn
+
+
+⚠️ LƯU Ý QUAN TRỌNG
+-------------------------------------------------------------------
+❌ KHÔNG chạy quá nhiều lần liên tục → có thể bị TikTok block IP
+
+✅ Nên đợi vài phút giữa mỗi lần chạy
+
+✅ Load 100 video có thể mất 5-10 phút (tùy tốc độ mạng)
+
+✅ Nếu kênh có ít video, giảm --max-scrolls xuống 10-15 cho nhanh
+
+
+📞 HỖ TRỢ
+-------------------------------------------------------------------
+Đọc thêm:
+- README.md: Hướng dẫn chi tiết
+- IMPROVEMENTS.md: Danh sách tính năng
+- example_usage.py: Ví dụ code Python
+
+
+═══════════════════════════════════════════════════════════════════
+           CHÚC BẠN SỬ DỤNG TOOL HIỆU QUẢ! 🎉
+═══════════════════════════════════════════════════════════════════
+
